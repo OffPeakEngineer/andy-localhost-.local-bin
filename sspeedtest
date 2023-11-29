@@ -1,0 +1,89 @@
+#!/bin/bash
+
+# Version
+VERSION="v0.1.0"
+
+# Default values
+COUNT=3
+SOURCE="/dev/zero"
+BLOCKSIZE="1GB"
+BINNAME=$(basename "$0")
+
+# Help message
+show_help() {
+    echo "Usage: $BINNAME [OPTIONS] HOST"
+    echo
+    echo "Connect to a HOST and execute a 'speedtest' via SSH."
+    echo
+    echo "Options:"
+    echo "  -h       Show this help message and exit."
+    echo "  -v       Show version information and exit."
+    echo "  -c COUNT Set the 'count' for the dd command (default: 3)."
+    echo "  -r       Use /dev/urandom as the data source instead of /dev/zero."
+    echo "  -s SIZE  Set the size of the payload (e.g., 1GB, 500MB)."
+    echo
+    echo "This script has \`dd\` powers!"
+}
+
+# Function to convert size to dd format
+convert_size() {
+    local size=$1
+    local unit="${size: -2}"
+    local number="${size%$unit}"
+
+    case $unit in
+        TB|GB|MB|KB)
+            BLOCKSIZE="${number}${unit}"
+            ;;
+        *)
+            echo "Error: Invalid size format. Use TB, GB, MB, or KB."
+            exit 1
+            ;;
+    esac
+}
+
+# Check for flags
+while getopts "hvc:rs:" option; do
+    case $option in
+        h) # Display help
+            show_help
+            exit 0
+            ;;
+        v) # Display version
+            echo "Version $VERSION"
+            exit 0
+            ;;
+        c) # Set count
+            COUNT="$OPTARG"
+            ;;
+        r) # Use /dev/urandom
+            SOURCE="/dev/urandom"
+            ;;
+        s) # Set size
+            convert_size "$OPTARG"
+            ;;
+        \?) # Invalid option
+            echo "Error: Invalid option."
+            show_help
+            exit 1
+            ;;
+    esac
+done
+
+# Shift off the options and flags
+shift $((OPTIND-1))
+
+# Check if exactly one argument is passed
+if [ "$#" -ne 1 ]; then
+    show_help
+    exit 1
+fi
+
+# "Ping" the SSH host to check connectivity
+if ! ssh -o BatchMode=yes -o ConnectTimeout=5 "$1" 'exit' 2>/dev/null; then
+    echo "Error: Unable to establish SSH connection to $1."
+    exit 1
+fi
+
+# Execute the SSH command with the specified options
+ssh "$1" "dd if=$SOURCE bs=$BLOCKSIZE count=$COUNT 2>/dev/null" | dd of=/dev/null status=progress
